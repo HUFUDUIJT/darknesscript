@@ -1,0 +1,577 @@
+local _env = (getgenv or _G)()
+if not _env then return end
+
+local function _dec(s)
+    local res = ""
+    for i = 1, #s do
+        res = res .. string.char(string.byte(s, i) - 1)
+    end
+    return res
+end
+
+local _s = {
+    _g1 = _dec("Qmbzefs"),         -- Players
+    _g2 = _dec("VtfSnevOuqvufSjwjdf"), -- UserInputService
+    _g3 = _dec("SvoTfswjdf"),      -- RunService
+    _g4 = _dec("Xpsltqbdf"),       -- Workspace
+    _g5 = _dec("SfqmjdbufeTupsbhf"),-- ReplicatedStorage
+    _e1 = _dec("LjmmBvsb"),        -- KillAura
+    _e2 = _dec("TqeedIbdl"),       -- SpeedHack
+    _e3 = _dec("Gmz"),             -- Fly
+    _e4 = _dec("Ubshfu!Tusbgf"),   -- Target Strafe
+    _e5 = _dec("BvouBnotdlcbdl"),  -- Anti-Knockback
+    _e6 = _dec("Dmjdl!Xbsq"),      -- Click Warp
+    _r1 = _dec("Sfnpuft"),         -- Remotes
+    _r2 = _dec("FojnbufIju"),      -- AnimateHit
+    _r3 = _dec("IjuSfrvftu"),      -- HitRequest
+    _r4 = _dec("DmjfouTubufVqebuf")-- ClientStateUpdate
+}
+
+local Players = game:GetService(_s._g1)
+local UserInputService = game:GetService(_s._g2)
+local RunService = game:GetService(_s._g3)
+local Workspace = game:GetService(_s._g4)
+local ReplicatedStorage = game:GetService(_s._g5)
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+local killauraEnabled = true
+local antiKnockbackEnabled = true
+local speedEnabled = true
+local flyEnabled = false
+local strafeEnabled = true
+local clickWarpEnabled = false 
+
+local targetDist = 40.0     
+local strafeRadius = 7.0   
+local speedBoost = 45.0 * 1.5 
+local flySpeed = 65.0
+local strafeSpeed = 23.0   
+local warpDistance = 50.0  
+local lastHit = 0
+local hitCooldown = 0.05   
+
+local keybinds = {
+    KillAura = Enum.KeyCode.X,
+    SpeedHack = Enum.KeyCode.C,
+    Fly = Enum.KeyCode.Z,
+    ["Target Strafe"] = Enum.KeyCode.V,
+    ["Anti-Knockback"] = Enum.KeyCode.N,
+    ["Click Warp"] = Enum.UserInputType.MouseButton3,
+    GUI = Enum.KeyCode.Quote
+}
+
+local currentFlyY = 0
+local strafeAngle = 0
+local PlayerControls = nil
+
+local function getMyChar()
+    return Workspace:FindFirstChild("LocalCharacter_" .. LocalPlayer.Name) or LocalPlayer.Character
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AdvancedClickGUI_Warp"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 440, 0, 420)
+mainFrame.Position = UDim2.new(0.5, -220, 0.5, -210)
+mainFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 10)
+uiCorner.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 45)
+titleLabel.BackgroundColor3 = Color3.fromRGB(32, 32, 40)
+titleLabel.Text = "by thermo tg channel @darknesscript"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 13
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleLabel
+
+local scrollList = Instance.new("ScrollingFrame")
+scrollList.Size = UDim2.new(1, -20, 1, -60)
+scrollList.Position = UDim2.new(0, 10, 0, 52)
+scrollList.BackgroundTransparency = 1
+scrollList.BorderSizePixel = 0
+scrollList.ScrollBarThickness = 6
+scrollList.Active = true
+scrollList.Parent = mainFrame
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout.Padding = UDim.new(0, 8)
+uiListLayout.Parent = scrollList
+
+uiListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    scrollList.CanvasSize = UDim2.new(0, 0, 0, uiListLayout.AbsoluteContentSize.Y + 10)
+end)
+
+local settingsFrame = Instance.new("Frame")
+settingsFrame.Size = UDim2.new(0, 220, 0, 160)
+settingsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+settingsFrame.BorderSizePixel = 0
+settingsFrame.Visible = false
+settingsFrame.ZIndex = 10
+settingsFrame.Parent = screenGui
+
+local sCorner = Instance.new("UICorner")
+sCorner.CornerRadius = UDim.new(0, 8)
+sCorner.Parent = settingsFrame
+
+local sTitle = Instance.new("TextLabel")
+sTitle.Size = UDim2.new(1, -30, 0, 30)
+sTitle.Position = UDim2.new(0, 10, 0, 0)
+sTitle.BackgroundTransparency = 1
+sTitle.Text = "Настройки"
+sTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+sTitle.Font = Enum.Font.SourceSansBold
+sTitle.TextSize = 14
+sTitle.ZIndex = 11
+sTitle.Parent = settingsFrame
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -28, 0, 3)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.TextSize = 13
+closeBtn.ZIndex = 12
+closeBtn.Parent = settingsFrame
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+
+closeBtn.MouseButton1Click:Connect(function()
+    settingsFrame.Visible = false
+end)
+
+local currentBindingFeature = nil
+local toggleButtonReferences = {}
+
+local function openSettings(featureName, currentVal, hasValueSetting)
+    currentBindingFeature = featureName
+    settingsFrame.Visible = true
+    
+    local mousePos = UserInputService:GetMouseLocation()
+    settingsFrame.Position = UDim2.new(0, mousePos.X + 10, 0, mousePos.Y - 10)
+    sTitle.Text = "Настройка: " .. featureName
+    
+    for _, child in ipairs(settingsFrame:GetChildren()) do
+        if child.Name == "DynamicControl" then
+            child:Destroy()
+        end
+    end
+    
+    local yPos = 35
+    
+    if hasValueSetting then
+        local lbl = Instance.new("TextLabel")
+        lbl.Name = "DynamicControl"
+        lbl.Size = UDim2.new(1, -20, 0, 20)
+        lbl.Position = UDim2.new(0, 10, 0, yPos)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = "Значение / Дистанция:"
+        lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+        lbl.TextSize = 12
+        lbl.Font = Enum.Font.SourceSans
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.ZIndex = 11
+        lbl.Parent = settingsFrame
+        
+        yPos = yPos + 22
+        
+        local box = Instance.new("TextBox")
+        box.Name = "DynamicControl"
+        box.Size = UDim2.new(1, -20, 0, 26)
+        box.Position = UDim2.new(0, 10, 0, yPos)
+        box.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+        box.Text = tostring(currentVal)
+        box.TextColor3 = Color3.fromRGB(255, 255, 255)
+        box.TextSize = 13
+        box.Font = Enum.Font.SourceSansBold
+        box.ZIndex = 11
+        box.Parent = settingsFrame
+        
+        local bCorner = Instance.new("UICorner")
+        bCorner.CornerRadius = UDim.new(0, 4)
+        bCorner.Parent = box
+        
+        box.FocusLost:Connect(function(enter)
+            local num = tonumber(box.Text)
+            if num then
+                if featureName == "SpeedHack" then speedBoost = num
+                elseif featureName == "Fly" then flySpeed = num
+                elseif featureName == "Target Strafe" then strafeRadius = num
+                elseif featureName == "KillAura" then targetDist = num
+                elseif featureName == "Click Warp" then warpDistance = num end
+            end
+        end)
+        yPos = yPos + 35
+    end
+    
+    local bindLbl = Instance.new("TextLabel")
+    bindLbl.Name = "DynamicControl"
+    bindLbl.Size = UDim2.new(1, -20, 0, 20)
+    bindLbl.Position = UDim2.new(0, 10, 0, yPos)
+    bindLbl.BackgroundTransparency = 1
+    bindLbl.Text = "Клавиша (Бинд):"
+    bindLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    bindLbl.TextSize = 12
+    bindLbl.Font = Enum.Font.SourceSans
+    bindLbl.TextXAlignment = Enum.TextXAlignment.Left
+    bindLbl.ZIndex = 11
+    bindLbl.Parent = settingsFrame
+    
+    yPos = yPos + 22
+    
+    local bindBtn = Instance.new("TextButton")
+    bindBtn.Name = "DynamicControl"
+    bindBtn.Size = UDim2.new(1, -20, 0, 26)
+    bindBtn.Position = UDim2.new(0, 10, 0, yPos)
+    bindBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    
+    local currentKey = keybinds[featureName]
+    local bindName = "None"
+    if typeof(currentKey) == "EnumItem" then
+        if currentKey.EnumType == Enum.KeyCode then
+            bindName = currentKey.Name
+        elseif currentKey.EnumType == Enum.UserInputType then
+            bindName = (currentKey == Enum.UserInputType.MouseButton3) and "Mouse Wheel" or currentKey.Name
+        end
+    end
+    bindBtn.Text = bindName
+    bindBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    bindBtn.TextSize = 13
+    bindBtn.Font = Enum.Font.SourceSansBold
+    bindBtn.ZIndex = 11
+    bindBtn.Parent = settingsFrame
+    
+    local bbCorner = Instance.new("UICorner")
+    bbCorner.CornerRadius = UDim.new(0, 4)
+    bbCorner.Parent = bindBtn
+    
+    bindBtn.MouseButton1Click:Connect(function()
+        bindBtn.Text = "Нажми клавишу..."
+        local connection
+        connection = UserInputService.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                keybinds[featureName] = input.KeyCode
+                bindBtn.Text = input.KeyCode.Name
+                connection:Disconnect()
+            elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+                keybinds[featureName] = input.UserInputType
+                bindBtn.Text = "Mouse Wheel"
+                connection:Disconnect()
+            end
+        end)
+    end)
+end
+
+local function createToggle(name, defaultState, hasValue, getValueFunc, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 45)
+    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    frame.Parent = scrollList
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 15
+    label.Font = Enum.Font.SourceSansBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            openSettings(name, getValueFunc and getValueFunc() or 0, hasValue)
+        end
+    end)
+    label.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            openSettings(name, getValueFunc and getValueFunc() or 0, hasValue)
+        end
+    end)
+    
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 100, 0, 30)
+    btn.Position = UDim2.new(1, -110, 0.5, -15)
+    btn.BackgroundColor3 = defaultState and Color3.fromRGB(0, 180, 80) or Color3.fromRGB(180, 40, 40)
+    btn.Text = defaultState and "ENABLED" or "DISABLED"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.SourceSansBold
+    btn.Parent = frame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+    
+    local state = defaultState
+    local function updateState(newState)
+        state = newState
+        btn.Text = state and "ENABLED" or "DISABLED"
+        btn.BackgroundColor3 = state and Color3.fromRGB(0, 180, 80) or Color3.fromRGB(180, 40, 40)
+        callback(state)
+    end
+
+    toggleButtonReferences[name] = updateState
+
+    btn.MouseButton1Click:Connect(function()
+        updateState(not state)
+    end)
+end
+
+createToggle("KillAura", killauraEnabled, true, function() return targetDist end, function(v) killauraEnabled = v end)
+createToggle("SpeedHack", speedEnabled, true, function() return speedBoost end, function(v) speedEnabled = v end)
+createToggle("Fly", flyEnabled, true, function() return flySpeed end, function(v) 
+    flyEnabled = v 
+    if flyEnabled then
+        local myChar = getMyChar()
+        local hitbox = myChar and myChar:FindFirstChild("PlayerHitbox")
+        if hitbox then currentFlyY = hitbox.Position.Y end
+    end
+end)
+createToggle("Target Strafe", strafeEnabled, true, function() return strafeRadius end, function(v) strafeEnabled = v end)
+createToggle("Click Warp", clickWarpEnabled, true, function() return warpDistance end, function(v) clickWarpEnabled = v end)
+createToggle("Anti-Knockback", antiKnockbackEnabled, false, nil, function(v) antiKnockbackEnabled = v end)
+
+local function performClickWarp()
+    if not clickWarpEnabled then return end
+    local myChar = getMyChar()
+    local hitbox = myChar and myChar:FindFirstChild("PlayerHitbox")
+    if hitbox then
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {myChar}
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        
+        local mousePos = UserInputService:GetMouseLocation()
+        local unitRay = Camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+        local raycastResult = Workspace:Raycast(unitRay.Origin, unitRay.Direction * warpDistance, raycastParams)
+        
+        local targetPos = raycastResult and raycastResult.Position or (unitRay.Origin + unitRay.Direction * warpDistance)
+        
+        hitbox.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0), targetPos + Vector3.new(0, 3, 1))
+        hitbox.AssemblyLinearVelocity = Vector3.zero
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if input.KeyCode == keybinds.GUI or input.KeyCode == Enum.KeyCode.Quote or input.KeyCode == Enum.KeyCode.Semicolon then
+        mainFrame.Visible = not mainFrame.Visible
+        if not mainFrame.Visible then settingsFrame.Visible = false end
+        return
+    end
+    
+    if clickWarpEnabled and input.UserInputType == keybinds["Click Warp"] then
+        performClickWarp()
+        return
+    end
+    
+    if processed then return end
+    
+    if input.KeyCode == keybinds.KillAura then
+        killauraEnabled = not killauraEnabled
+    elseif input.KeyCode == keybinds.SpeedHack then
+        speedEnabled = not speedEnabled
+    elseif input.KeyCode == keybinds.Fly then
+        flyEnabled = not flyEnabled
+        if flyEnabled then
+            local myChar = getMyChar()
+            local hitbox = myChar and myChar:FindFirstChild("PlayerHitbox")
+            if hitbox then currentFlyY = hitbox.Position.Y end
+        end
+    elseif input.KeyCode == keybinds["Target Strafe"] then
+        strafeEnabled = not strafeEnabled
+    elseif input.KeyCode == keybinds["Click Warp"] then
+        clickWarpEnabled = not clickWarpEnabled
+        if toggleButtonReferences["Click Warp"] then
+            toggleButtonReferences["Click Warp"](clickWarpEnabled)
+        end
+    elseif input.KeyCode == keybinds["Anti-Knockback"] then
+        antiKnockbackEnabled = not antiKnockbackEnabled
+    end
+end)
+
+local function getTarget(originPos)
+    if not killauraEnabled then return nil end
+    local closest = nil
+    local minDist = targetDist
+    local otherChars = Workspace:FindFirstChild("OtherCharacters")
+    if not otherChars then return nil end
+
+    for _, char in ipairs(otherChars:GetChildren()) do
+        local tRoot = char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+        if tRoot then
+            local dist = (tRoot.Position - originPos).Magnitude
+            if dist <= minDist then
+                minDist = dist
+                closest = char
+            end
+        end
+    end
+    return closest
+end
+
+RunService.RenderStepped:Connect(function(dt)
+    if mainFrame.Visible then
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled = true
+    end
+
+    local otherChars = Workspace:FindFirstChild("OtherCharacters")
+    if otherChars then
+        for _, char in ipairs(otherChars:GetChildren()) do
+            if not char:FindFirstChild("ESPHighlight") then
+                local hl = Instance.new("Highlight")
+                hl.Name = "ESPHighlight"
+                hl.FillColor = Color3.fromRGB(255, 0, 0)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.5
+                hl.Parent = char
+            end
+        end
+    end
+
+    local myChar = getMyChar()
+    local eyeLevel = myChar and myChar:FindFirstChild("PlayerEyeLevel")
+    local originPos = eyeLevel and eyeLevel.Position or Camera.CFrame.Position
+    local target = getTarget(originPos)
+
+    if speedEnabled and myChar then
+        local hitbox = myChar:FindFirstChild("PlayerHitbox")
+        if hitbox then
+            if not PlayerControls then
+                local pm = LocalPlayer.PlayerScripts:FindFirstChild("PlayerModule")
+                if pm then PlayerControls = require(pm):GetControls() end
+            end
+            
+            local tRoot = target and (target:FindFirstChild("Torso") or target:FindFirstChild("HumanoidRootPart"))
+            
+            if strafeEnabled and target and tRoot then
+                strafeAngle = strafeAngle + (strafeSpeed * dt)
+                local targetPos = tRoot.Position
+                local offsetX = math.cos(strafeAngle) * strafeRadius
+                local offsetZ = math.sin(strafeAngle) * strafeRadius
+                local desiredPos = Vector3.new(targetPos.X + offsetX, hitbox.Position.Y, targetPos.Z + offsetZ)
+                
+                local moveDir = (desiredPos - hitbox.Position)
+                if moveDir.Magnitude > 0 then
+                    local stepDist = speedBoost * dt
+                    local newPos = hitbox.Position + (moveDir.Unit * math.min(moveDir.Magnitude, stepDist))
+                    local lookAtTarget = Vector3.new(targetPos.X, newPos.Y, targetPos.Z)
+                    hitbox.CFrame = CFrame.new(newPos, lookAtTarget)
+                end
+            elseif PlayerControls then
+                local moveVec = PlayerControls:GetMoveVector()
+                if moveVec.Magnitude > 0 then
+                    local look = Vector3.new(Camera.CFrame.LookVector.X, 0, Camera.CFrame.LookVector.Z)
+                    local right = Vector3.new(Camera.CFrame.RightVector.X, 0, Camera.CFrame.RightVector.X)
+                    
+                    if look.Magnitude > 0 and right.Magnitude > 0 then
+                        look = look.Unit
+                        right = right.Unit
+                        local moveDir = (look * -moveVec.Z + right * moveVec.X)
+                        if moveDir.Magnitude > 0 then
+                            moveDir = moveDir.Unit
+                            hitbox.CFrame = hitbox.CFrame + (moveDir * speedBoost * dt)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if flyEnabled and myChar then
+        local hitbox = myChar:FindFirstChild("PlayerHitbox")
+        if hitbox then
+            local moveY = 0
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) or UserInputService:IsKeyDown(Enum.KeyCode.E) then
+                moveY = moveY + (flySpeed * dt)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+                moveY = moveY - (flySpeed * dt)
+            end
+            currentFlyY = currentFlyY + moveY
+            local pos = hitbox.Position
+            hitbox.CFrame = CFrame.new(pos.X, currentFlyY, pos.Z) * hitbox.CFrame.Rotation
+            hitbox.AssemblyLinearVelocity = Vector3.zero
+        end
+    end
+
+    if killauraEnabled then
+        if target then
+            local tRoot = target:FindFirstChild("Torso") or target:FindFirstChild("HumanoidRootPart")
+            if tRoot and myChar then
+                local headTorso = myChar:FindFirstChild("HeadTorso")
+                local neck = headTorso and headTorso:FindFirstChild("Neck")
+                
+                if neck then
+                    local lookDir = (tRoot.Position - originPos).Unit
+                    local basePos = Vector3.new(0, 1.403, 0)
+                    neck.C0 = CFrame.new(basePos, basePos + lookDir)
+                end
+
+                if tick() - lastHit >= hitCooldown then
+                    local Remotes = ReplicatedStorage:FindFirstChild(_s._r1)
+                    if Remotes then
+                        local AnimateHit = Remotes:FindFirstChild(_s._r2)
+                        local HitRequest = Remotes:FindFirstChild(_s._r3)
+                        
+                        if AnimateHit and HitRequest then
+                            local targetPlayerName = string.gsub(target.Name, "_FakeCharacter", "")
+                            local targetPlayer = Players:FindFirstChild(targetPlayerName)
+                            local preciseDir = (tRoot.Position - originPos).Unit
+
+                            AnimateHit:FireServer()
+                            HitRequest:FireServer(originPos, preciseDir, target, targetPlayer)
+                            lastHit = tick()
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+pcall(function()
+    local ClientStateUpdate = ReplicatedStorage:WaitForChild(_s._r1):WaitForChild(_s._r4)
+    if getconnections then
+        for _, conn in ipairs(getconnections(ClientStateUpdate.OnClientEvent)) do
+            local oldFunc = conn.Function
+            if oldFunc then
+                hookfunction(oldFunc, function(p1, ...)
+                    if antiKnockbackEnabled and type(p1) == "table" and p1.vel then
+                        p1.vel = Vector3.new(0, p1.vel.Y, 0)
+                    end
+                    return oldFunc(p1, ...)
+                end)
+            end
+        end
+    end
+end)
